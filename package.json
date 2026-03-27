@@ -1,0 +1,11 @@
+{
+  "name": "wildfire-hazard-predictor",
+  "version": "1.0.0",
+  "description": "California wildfire hazard prediction tool",
+  "main": "ca_wildfire_hazard_predictor.html",
+  "scripts": {
+    "start": "npx serve ."
+  },
+  "author": "",
+  "license": "MIT"
+}
