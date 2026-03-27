@@ -1,0 +1,1466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CA Wildfire Hazard Predictor</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Fira+Code:wght@300;400;500&display=swap');
+
+:root {
+  --bg:       #07080a;
+  --panel:    #0e1015;
+  --panel2:   #141720;
+  --panel3:   #1a1e28;
+  --border:   #252a38;
+  --border2:  #313848;
+  --text:     #dde2f0;
+  --muted:    #636b85;
+  --muted2:   #8890a8;
+  --mono:     'Fira Code', monospace;
+  --sans:     'Syne', sans-serif;
+  --s1: #2196f3; --s2: #03a9f4; --s3: #4caf50; --s4: #8bc34a;
+  --s5: #ffeb3b; --s6: #ffc107; --s7: #ff9800; --s8: #ff5722;
+  --s9: #f44336; --s10: #b71c1c;
+  --c-fhsz:    #7c4dff;
+  --c-hist:    #ff6d00;
+  --c-weather: #00bcd4;
+  --c-slope:   #4caf50;
+  --c-cpuc:    #f44336;
+  --c-drought: #ff9800;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+html,body { height:100%; overflow:hidden; background:var(--bg); color:var(--text); font-family:var(--sans); }
+
+.app { display:flex; flex-direction:column; height:100vh; }
+
+.hdr {
+  height:48px; display:flex; align-items:center; gap:0;
+  background:var(--panel); border-bottom:1px solid var(--border);
+  flex-shrink:0; z-index:600;
+}
+.hdr-logo {
+  padding:0 18px; border-right:1px solid var(--border);
+  height:100%; display:flex; align-items:center; gap:10px;
+}
+.logo-icon { font-size:20px; filter:drop-shadow(0 0 6px #ff6d00bb); }
+.logo-text  { font-size:15px; font-weight:800; letter-spacing:.5px; color:var(--text); }
+.logo-text span { color:#ff6d00; }
+.hdr-tabs  { display:flex; height:100%; }
+.htab {
+  padding:0 18px; height:100%; display:flex; align-items:center;
+  font-size:11px; font-weight:600; letter-spacing:1px; text-transform:uppercase;
+  color:var(--muted); cursor:pointer; border-bottom:2px solid transparent;
+  transition:all .15s; user-select:none; font-family:var(--mono);
+}
+.htab:hover { color:var(--text); }
+.htab.active { color:#ff9800; border-bottom-color:#ff9800; }
+.hdr-right { margin-left:auto; display:flex; align-items:center; gap:10px; padding:0 16px; }
+.hdr-pill {
+  font-family:var(--mono); font-size:9px; letter-spacing:1px;
+  padding:3px 9px; border-radius:20px; border:1px solid var(--border2);
+  color:var(--muted2);
+}
+.hdr-pill.live { border-color:rgba(0,188,212,.4); color:#00bcd4; background:rgba(0,188,212,.06); }
+
+.split { display:flex; flex:1; overflow:hidden; }
+
+.lbar {
+  width:310px; flex-shrink:0; background:var(--panel);
+  border-right:1px solid var(--border); display:flex;
+  flex-direction:column; overflow:hidden;
+}
+.sec { border-bottom:1px solid var(--border); flex-shrink:0; }
+.sec-hd {
+  padding:9px 14px; font-family:var(--mono); font-size:8px;
+  letter-spacing:2px; text-transform:uppercase; color:var(--muted);
+  display:flex; align-items:center; justify-content:space-between;
+}
+
+.layers-wrap { padding:6px 14px 10px; display:flex; flex-direction:column; gap:5px; }
+.layer-row {
+  display:flex; align-items:center; gap:8px; padding:5px 7px;
+  border-radius:3px; cursor:pointer; transition:background .1s;
+  border:1px solid transparent;
+}
+.layer-row:hover { background:rgba(255,255,255,.03); }
+.layer-row.on { border-color:rgba(255,255,255,.06); }
+.toggle {
+  width:30px; height:15px; border-radius:8px; background:var(--border2);
+  position:relative; flex-shrink:0; transition:background .2s;
+}
+.toggle.on { background:rgba(255,152,0,.35); }
+.toggle::after {
+  content:''; position:absolute; width:11px; height:11px;
+  border-radius:50%; background:var(--muted); top:2px; left:2px;
+  transition:all .2s;
+}
+.toggle.on::after { left:17px; background:#ff9800; box-shadow:0 0 5px #ff980080; }
+.layer-dot { width:9px; height:9px; border-radius:2px; flex-shrink:0; }
+.layer-dot.circle { border-radius:50%; }
+.layer-name { font-size:11px; font-weight:500; flex:1; }
+.layer-src  { font-family:var(--mono); font-size:8px; color:var(--muted); }
+
+.score-wrap { padding:10px 14px 14px; }
+.score-empty { font-family:var(--mono); font-size:9px; color:var(--muted); line-height:1.7; }
+.score-empty .hint { color:#ff9800; opacity:.8; }
+
+.score-card { animation: fadeUp .25s ease; }
+@keyframes fadeUp { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+
+.score-top { display:flex; align-items:baseline; gap:10px; margin-bottom:4px; }
+.score-num { font-size:52px; font-weight:800; line-height:1; transition:color .3s; }
+.score-label { font-size:13px; font-weight:600; opacity:.8; }
+.score-addr  { font-family:var(--mono); font-size:9px; color:var(--muted); margin-bottom:10px; line-height:1.5; word-break:break-word; }
+
+.gauge-track {
+  height:6px; border-radius:3px;
+  background: linear-gradient(to right,
+    var(--s1),var(--s2),var(--s3),var(--s4),var(--s5),
+    var(--s6),var(--s7),var(--s8),var(--s9),var(--s10));
+  position:relative; margin-bottom:4px;
+}
+.gauge-cursor {
+  position:absolute; top:-4px; width:3px; height:14px;
+  background:white; border-radius:2px;
+  box-shadow:0 0 6px rgba(255,255,255,.6);
+  transform:translateX(-50%); transition:left .5s ease;
+}
+.gauge-ticks { display:flex; justify-content:space-between; font-family:var(--mono); font-size:7px; color:var(--muted); margin-bottom:12px; }
+
+.factors { display:flex; flex-direction:column; gap:4px; }
+.factor-row { display:flex; align-items:center; gap:7px; }
+.factor-label { font-family:var(--mono); font-size:9px; color:var(--muted2); width:90px; flex-shrink:0; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; }
+.factor-track { flex:1; height:5px; background:var(--panel2); border-radius:3px; overflow:hidden; }
+.factor-fill  { height:100%; border-radius:3px; transition:width .6s ease; }
+.factor-raw   { font-family:var(--mono); font-size:9px; color:var(--text); width:32px; text-align:right; }
+.factor-wt    { font-family:var(--mono); font-size:8px; color:var(--muted); width:22px; text-align:right; }
+
+.weather-mini { margin-top:10px; display:grid; grid-template-columns:1fr 1fr; gap:4px; }
+.wm-cell { background:var(--panel2); border:1px solid var(--border); border-radius:3px; padding:6px 8px; }
+.wm-label { font-family:var(--mono); font-size:8px; color:var(--muted); }
+.wm-val   { font-family:var(--mono); font-size:13px; font-weight:500; color:var(--text); }
+
+.map-wrap { flex:1; position:relative; overflow:hidden; }
+#map { width:100%; height:100%; background:#07080a; }
+
+.map-load {
+  position:absolute; inset:0; background:rgba(7,8,10,.85);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  z-index:1000; gap:12px; transition:opacity .4s;
+}
+.map-load.hidden { opacity:0; pointer-events:none; }
+.spin {
+  width:36px; height:36px; border-radius:50%;
+  border:2px solid var(--border2); border-top-color:#ff9800;
+  animation:spin .7s linear infinite;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+.load-title { font-size:14px; font-weight:700; color:#ff9800; letter-spacing:1px; }
+.load-msg   { font-family:var(--mono); font-size:9px; color:var(--muted); }
+.load-bar   { width:200px; height:3px; background:var(--border2); border-radius:2px; overflow:hidden; }
+.load-fill  { height:100%; background:linear-gradient(90deg,#ff6d00,#ff9800); border-radius:2px; transition:width .3s; }
+
+.rbar {
+  width:300px; flex-shrink:0; background:var(--panel);
+  border-left:1px solid var(--border); display:flex;
+  flex-direction:column; overflow:hidden;
+}
+.rbar-scroll { flex:1; overflow-y:auto; }
+.rbar-scroll::-webkit-scrollbar { width:3px; }
+.rbar-scroll::-webkit-scrollbar-thumb { background:var(--border2); }
+
+.method-wrap { padding:10px 14px 14px; }
+.method-intro { font-size:11px; color:var(--muted2); line-height:1.65; margin-bottom:12px; }
+
+.formula-box {
+  background:var(--panel2); border:1px solid var(--border);
+  border-left:3px solid #ff9800; border-radius:4px;
+  padding:10px 12px; margin-bottom:12px;
+  font-family:var(--mono); font-size:10px; line-height:1.8; color:var(--muted2);
+}
+.formula-box .fline { display:flex; gap:6px; align-items:baseline; }
+.formula-box .fname { color:var(--text); font-weight:500; }
+.formula-box .fop   { color:var(--muted); }
+.formula-box .fval  { color:#ff9800; }
+.formula-box .fcmt  { color:var(--muted); font-size:9px; opacity:.7; }
+
+.factor-card {
+  background:var(--panel2); border:1px solid var(--border);
+  border-radius:4px; padding:10px 12px; margin-bottom:8px;
+}
+.fc-head { display:flex; align-items:center; gap:7px; margin-bottom:6px; }
+.fc-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.fc-name { font-size:11px; font-weight:600; }
+.fc-weight {
+  margin-left:auto; font-family:var(--mono); font-size:9px;
+  color:#ff9800; background:rgba(255,152,0,.1);
+  border:1px solid rgba(255,152,0,.25); border-radius:2px; padding:1px 6px;
+}
+.fc-desc { font-size:10px; color:var(--muted2); line-height:1.6; }
+.fc-source { font-family:var(--mono); font-size:8px; color:var(--muted); margin-top:4px; }
+.fc-source a { color:var(--muted); text-decoration:none; }
+.fc-source a:hover { color:#ff9800; }
+
+.score-table { width:100%; border-collapse:collapse; margin-top:8px; }
+.score-table th {
+  font-family:var(--mono); font-size:8px; color:var(--muted);
+  letter-spacing:1px; text-transform:uppercase; text-align:left;
+  padding:4px 6px; border-bottom:1px solid var(--border);
+}
+.score-table td {
+  font-family:var(--mono); font-size:9px; color:var(--muted2);
+  padding:4px 6px; border-bottom:1px solid rgba(255,255,255,.03);
+}
+.score-table td:first-child { color:var(--text); }
+
+.hero-search {
+  position:absolute; bottom:90px; left:50%; transform:translateX(-50%);
+  z-index:900; width:420px; max-width:calc(100vw - 40px);
+  background:rgba(10,10,11,.92); backdrop-filter:blur(10px);
+  border:1px solid var(--border2); border-radius:8px;
+  padding:14px 16px 12px; box-shadow:0 12px 40px rgba(0,0,0,.7);
+  transition:opacity .3s, transform .3s;
+}
+.hero-search.hidden { opacity:0; pointer-events:none; transform:translateX(-50%) translateY(8px); }
+.hero-search.minimized { padding:7px 14px; cursor:pointer; width:auto; min-width:0; }
+.hero-search.minimized .hero-search-label,
+.hero-search.minimized .hero-row,
+.hero-search.minimized .hero-sub,
+.hero-search.minimized .hero-dismiss { display:none; }
+.hero-search.minimized::after {
+  content:'⌕  Score a location';
+  font-family:var(--mono); font-size:10px;
+  color:var(--muted2); letter-spacing:.5px; display:block; white-space:nowrap;
+}
+.hero-search.minimized:hover::after { color:#ff9800; }
+.hero-search-label {
+  font-family:var(--mono); font-size:9px; letter-spacing:2px;
+  text-transform:uppercase; color:#ff9800; margin-bottom:8px;
+  display:flex; align-items:center; gap:6px;
+}
+.hero-search-label::before {
+  content:''; display:inline-block; width:6px; height:6px;
+  border-radius:50%; background:#ff9800; box-shadow:0 0 8px #ff9800; flex-shrink:0;
+  animation:pulse 2s ease-in-out infinite;
+}
+.hero-row { display:flex; gap:8px; }
+.hero-inp {
+  flex:1; background:var(--panel2); border:1px solid var(--border2);
+  border-radius:4px; color:var(--text); font-family:var(--mono);
+  font-size:12px; padding:9px 12px; outline:none;
+  transition:border-color .15s, box-shadow .15s;
+}
+.hero-inp:focus { border-color:#ff9800; box-shadow:0 0 0 2px rgba(255,152,0,.15); }
+.hero-inp::placeholder { color:var(--muted); }
+.hero-btn {
+  background:rgba(255,152,0,.15); border:1px solid rgba(255,152,0,.5);
+  border-radius:4px; color:#ff9800; font-family:var(--mono);
+  font-size:11px; font-weight:500; padding:9px 16px;
+  cursor:pointer; transition:all .15s; white-space:nowrap; letter-spacing:.5px;
+}
+.hero-btn:hover { background:rgba(255,152,0,.3); border-color:#ff9800; }
+.hero-sub { font-family:var(--mono); font-size:9px; color:var(--muted); margin-top:6px; line-height:1.5; }
+.hero-dismiss {
+  position:absolute; top:8px; right:10px;
+  background:none; border:none; color:var(--muted); font-size:14px;
+  cursor:pointer; line-height:1; padding:2px 4px; transition:color .15s;
+}
+.hero-dismiss:hover { color:var(--text); }
+.hero-search .ac-dropdown {
+  bottom:100%; top:auto; border-radius:4px 4px 0 0;
+  border-bottom:none; border-top:1px solid var(--border2);
+}
+
+.ac-wrap { position:relative; }
+.ac-dropdown {
+  display:none; position:absolute; top:100%; left:0; right:0; z-index:2000;
+  background:var(--panel2); border:1px solid var(--border2);
+  border-top:none; border-radius:0 0 4px 4px;
+  max-height:220px; overflow-y:auto;
+  box-shadow:0 8px 24px rgba(0,0,0,.6);
+}
+.ac-dropdown.open { display:block; }
+.ac-item {
+  padding:7px 10px; cursor:pointer;
+  font-family:var(--mono); font-size:10px; line-height:1.4;
+  border-bottom:1px solid rgba(255,255,255,.04);
+  display:flex; flex-direction:column; gap:2px; transition:background .1s;
+}
+.ac-item:last-child { border-bottom:none; }
+.ac-item:hover, .ac-item.active { background:rgba(255,152,0,.1); }
+.ac-item-name { color:var(--text); font-size:11px; }
+.ac-item-name mark { background:transparent; color:#ff9800; font-weight:700; }
+.ac-item-sub  { color:var(--muted); font-size:9px; }
+.ac-item-type {
+  font-size:8px; letter-spacing:.5px; text-transform:uppercase;
+  color:var(--muted); align-self:flex-start;
+  border:1px solid var(--border2); border-radius:2px; padding:1px 4px; margin-top:1px;
+}
+.ac-spinner { padding:8px 10px; font-family:var(--mono); font-size:9px; color:var(--muted); text-align:center; }
+
+.legend-btn {
+  position:absolute; top:10px; right:10px; z-index:900;
+  background:rgba(10,10,11,.88); backdrop-filter:blur(6px);
+  border:1px solid var(--border2); border-radius:4px;
+  padding:5px 14px; cursor:pointer;
+  font-family:var(--mono); font-size:9px; letter-spacing:1px;
+  text-transform:uppercase; color:var(--muted2);
+  display:flex; align-items:center; gap:6px; transition:all .15s;
+}
+.legend-btn:hover { color:var(--text); border-color:#ff9800; }
+.legend-btn .caret { transition:transform .2s; }
+.legend-btn.open .caret { transform:rotate(180deg); }
+
+.legend-panel {
+  position:absolute; top:48px; right:10px; z-index:899;
+  background:rgba(10,10,11,.93); backdrop-filter:blur(8px);
+  border:1px solid var(--border2); border-radius:6px;
+  padding:14px 16px; min-width:280px;
+  box-shadow:0 8px 32px rgba(0,0,0,.6); display:none;
+}
+.legend-panel.open { display:block; }
+.legend-title { font-family:var(--mono); font-size:8px; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin-bottom:10px; }
+.legend-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 20px; }
+.legend-section-title {
+  font-family:var(--mono); font-size:8px; letter-spacing:1px;
+  text-transform:uppercase; color:var(--muted);
+  margin:8px 0 4px; grid-column:1/-1;
+  border-top:1px solid var(--border); padding-top:8px;
+}
+.legend-item { display:flex; align-items:center; gap:7px; font-family:var(--mono); font-size:9px; color:var(--muted2); }
+.legend-swatch { width:12px; height:12px; border-radius:2px; flex-shrink:0; }
+.legend-swatch.circle { border-radius:50%; }
+.legend-ramp {
+  grid-column:1/-1; height:10px; border-radius:3px;
+  background:linear-gradient(to right,#2196f3,#03a9f4,#4caf50,#8bc34a,#ffeb3b,#ffc107,#ff9800,#ff5722,#f44336,#b71c1c);
+  margin:4px 0 2px;
+}
+.legend-ramp-labels { grid-column:1/-1; display:flex; justify-content:space-between; font-family:var(--mono); font-size:8px; color:var(--muted); }
+
+.leaflet-popup-content-wrapper {
+  background:var(--panel) !important; border:1px solid var(--border) !important;
+  border-radius:5px !important; box-shadow:0 8px 32px rgba(0,0,0,.7) !important; padding:0 !important;
+}
+.leaflet-popup-content { margin:0 !important; min-width:220px !important; }
+.leaflet-popup-tip     { background:var(--panel) !important; }
+.leaflet-popup-close-button { color:var(--muted) !important; padding:6px 8px !important; font-size:16px !important; }
+.leaflet-bar a { background:var(--panel) !important; color:var(--text) !important; border-color:var(--border) !important; }
+.leaflet-bar a:hover { background:var(--panel2) !important; color:#ff9800 !important; }
+.leaflet-control-attribution { background:rgba(7,8,10,.7) !important; color:var(--muted) !important; font-size:8px !important; }
+.leaflet-control-attribution a { color:var(--muted) !important; }
+.leaflet-control-scale-line { background:rgba(7,8,10,.7) !important; border-color:var(--border2) !important; color:var(--muted) !important; font-family:var(--mono) !important; font-size:8px !important; }
+.leaflet-tooltip {
+  background:rgba(7,8,10,.92) !important; border:1px solid var(--border) !important;
+  color:var(--text) !important; font-family:var(--mono) !important;
+  font-size:10px !important; border-radius:3px !important;
+  padding:5px 10px !important; box-shadow:0 4px 16px rgba(0,0,0,.5) !important;
+}
+
+.view { display:none; }
+.view.active { display:flex; flex:1; overflow:hidden; }
+
+#view-method { overflow-y:auto; padding:32px; background:var(--bg); flex-direction:column; }
+#view-method::-webkit-scrollbar { width:5px; }
+#view-method::-webkit-scrollbar-thumb { background:var(--border2); }
+.method-page { max-width:860px; margin:0 auto; }
+.method-page h1 { font-size:32px; font-weight:800; margin-bottom:6px; }
+.method-page h1 span { color:#ff9800; }
+.method-page .sub { font-family:var(--mono); font-size:11px; color:var(--muted); margin-bottom:28px; }
+.method-page h2 { font-size:16px; font-weight:700; margin:24px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--border); }
+.method-page p  { font-size:13px; color:var(--muted2); line-height:1.7; margin-bottom:12px; }
+.method-page code { font-family:var(--mono); font-size:11px; background:var(--panel2); padding:1px 5px; border-radius:2px; color:#ff9800; }
+
+.weights-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px; }
+.wg-card { background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:14px; }
+.wg-card-top { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.wg-dot { width:10px; height:10px; border-radius:50%; }
+.wg-name { font-size:13px; font-weight:700; }
+.wg-pct { margin-left:auto; font-family:var(--mono); font-size:12px; color:#ff9800; }
+.wg-desc { font-size:11px; color:var(--muted2); line-height:1.6; }
+.wg-api  { font-family:var(--mono); font-size:9px; color:var(--muted); margin-top:6px; }
+.wg-api a { color:var(--muted); text-decoration:none; }
+.wg-api a:hover { color:#ff9800; }
+
+.ffwi-box {
+  background:var(--panel); border:1px solid var(--border);
+  border-left:3px solid #00bcd4; border-radius:4px; padding:14px; margin:12px 0;
+}
+.ffwi-box h3 { font-size:13px; font-weight:700; margin-bottom:8px; color:#00bcd4; }
+.ffwi-box p  { font-size:11px; color:var(--muted2); line-height:1.7; margin-bottom:8px; }
+.ffwi-box code { font-family:var(--mono); font-size:10px; background:var(--panel2); padding:2px 6px; border-radius:2px; color:#00bcd4; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="hdr">
+    <div class="hdr-logo">
+      <div class="logo-icon">🔥</div>
+      <div class="logo-text">CA WILDFIRE <span>HAZARD PREDICTOR</span></div>
+    </div>
+    <div class="hdr-tabs">
+      <div class="htab active" onclick="switchTab('map',this)">Map & Predict</div>
+      <div class="htab" onclick="switchTab('method',this)">Methodology</div>
+    </div>
+    <div class="hdr-right">
+      <div class="hdr-pill live">● Live Weather: Open-Meteo</div>
+      <div class="hdr-pill">CAL FIRE FRAP + FHSZ</div>
+      <div class="hdr-pill">CPUC HFTD</div>
+    </div>
+  </div>
+
+  <div class="view active" id="view-map" style="flex-direction:row;">
+    <div class="split" style="flex:1;overflow:hidden;">
+
+      <div class="lbar">
+        <div class="sec">
+          <div class="sec-hd">Data Layers</div>
+          <div class="layers-wrap" id="layerToggles"></div>
+        </div>
+        <div class="sec" style="flex:1;overflow-y:auto;border:none;">
+          <div class="sec-hd">Hazard Score</div>
+          <div class="score-wrap" id="scoreWrap">
+            <div class="score-empty">
+              <div class="hint" style="margin-bottom:6px;">Click the map or use "Score a Location" to begin</div>
+              <div>The model scores 1–10 based on:</div>
+              <div>· CAL FIRE Hazard Severity Zone</div>
+              <div>· Historical burn frequency (FRAP)</div>
+              <div>· Live FFWI weather index</div>
+              <div>· Terrain slope proxy</div>
+              <div>· CPUC Fire Threat District</div>
+              <div>· Current drought conditions</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="map-wrap">
+        <div id="map"></div>
+
+        <div class="hero-search" id="heroSearch" onclick="if(this.classList.contains('minimized'))restoreHero()">
+          <button class="hero-dismiss" onclick="dismissHero()" title="Dismiss">✕</button>
+          <div class="hero-search-label">Score a Location</div>
+          <div class="hero-row">
+            <div class="ac-wrap" style="flex:1;position:relative;">
+              <input class="hero-inp" id="heroInp"
+                placeholder="Enter an address, city, or fire name…"
+                type="text" autocomplete="off"
+                oninput="onHeroInput(this.value)"
+                onkeydown="onHeroKeydown(event)"
+                onfocus="if(this.value.length>1)openHeroDropdown()">
+              <div class="ac-dropdown" id="heroDropdown"></div>
+            </div>
+            <button class="hero-btn" onclick="doHeroSearch()">Analyze ▶</button>
+          </div>
+          <div class="hero-sub" id="heroHint">
+            Or click anywhere on the map to score that location.
+          </div>
+        </div>
+
+        <button class="legend-btn" id="legendBtn" onclick="toggleLegend()">
+          ☰ Legend <span class="caret">▼</span>
+        </button>
+
+        <div class="legend-panel" id="legendPanel">
+          <div class="legend-title">Map Legend</div>
+          <div class="legend-grid">
+            <div class="legend-section-title">Hazard Score (1–10)</div>
+            <div class="legend-ramp" style="grid-column:1/-1"></div>
+            <div class="legend-ramp-labels"><span>1 Low</span><span>5 Moderate</span><span>10 Max</span></div>
+            <div class="legend-section-title">Fire Hazard Severity Zones (FHSZ)</div>
+            <div class="legend-item">
+              <div class="legend-swatch" style="background:rgba(244,67,54,.45);border:1px solid #f44336;"></div>Very High
+            </div>
+            <div class="legend-item">
+              <div class="legend-swatch" style="background:rgba(255,152,0,.45);border:1px solid #ff9800;"></div>High
+            </div>
+            <div class="legend-item">
+              <div class="legend-swatch" style="background:rgba(255,235,59,.45);border:1px solid #ffeb3b;"></div>Moderate
+            </div>
+            <div class="legend-section-title">Historical Fire Perimeters (FRAP)</div>
+            <div class="legend-item" style="grid-column:1/-1">
+              <div class="legend-swatch" style="background:rgba(255,109,0,.4);border:1px solid #ff6d00;"></div>
+              Burn scar — opacity fades with age
+            </div>
+            <div class="legend-section-title">CPUC Fire Threat Districts</div>
+            <div class="legend-item">
+              <div class="legend-swatch circle" style="background:rgba(244,67,54,.4);border:1px solid #f44336;"></div>Tier 3 — Extreme
+            </div>
+            <div class="legend-item">
+              <div class="legend-swatch circle" style="background:rgba(255,152,0,.4);border:1px solid #ff9800;"></div>Tier 2 — Elevated
+            </div>
+            <div class="legend-section-title">Scored Location</div>
+            <div class="legend-item" style="grid-column:1/-1">
+              <div class="legend-swatch circle" style="background:#ff9800;box-shadow:0 0 8px #ff9800aa;"></div>
+              Click point — runs hazard score
+            </div>
+          </div>
+        </div>
+
+        <div class="map-load" id="mapLoad">
+          <div class="spin"></div>
+          <div class="load-title">LOADING LAYERS</div>
+          <div class="load-msg" id="loadMsg">Initializing...</div>
+          <div class="load-bar"><div class="load-fill" id="loadFill" style="width:0%"></div></div>
+        </div>
+      </div>
+
+      <div class="rbar">
+        <div class="rbar-scroll">
+          <div class="sec">
+            <div class="sec-hd">Score Model</div>
+            <div class="method-wrap">
+              <div class="method-intro">
+                Composite score from 6 independent data inputs,
+                each normalized 0–10 then weighted. Final score
+                is a weighted sum, clamped 1–10.
+              </div>
+              <div class="formula-box">
+                <div class="fline"><span class="fname">Score</span><span class="fop">=</span><span class="fcmt">Σ (factor × weight)</span></div>
+                <div style="height:6px;"></div>
+                <div class="fline"><span class="fname">FHSZ</span><span class="fop">×</span><span class="fval">0.60</span><span class="fcmt"> CAL FIRE zones</span></div>
+                <div class="fline"><span class="fname">History</span><span class="fop">×</span><span class="fval">0.15</span><span class="fcmt"> burn frequency</span></div>
+                <div class="fline"><span class="fname">FFWI</span><span class="fop">×</span><span class="fval">0.12</span><span class="fcmt"> live fire weather</span></div>
+                <div class="fline"><span class="fname">Slope</span><span class="fop">×</span><span class="fval">0.06</span><span class="fcmt"> terrain proxy</span></div>
+                <div class="fline"><span class="fname">CPUC</span><span class="fop">×</span><span class="fval">0.05</span><span class="fcmt"> power line risk</span></div>
+                <div class="fline"><span class="fname">Drought</span><span class="fop">×</span><span class="fval">0.02</span><span class="fcmt"> precip deficit</span></div>
+              </div>
+              <div id="factorCards"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="view" id="view-method">
+    <div class="method-page">
+      <h1>Wildfire Hazard <span>Scoring Model</span></h1>
+      <div class="sub">How the 1–10 hazard score is calculated — full transparency</div>
+      <h2>Overview</h2>
+      <p>The hazard score combines six independent data signals, each sourced from authoritative open-data APIs. Every factor is normalized to a 0–10 scale, multiplied by its weight, and summed. The result is clamped to the 1–10 range.</p>
+      <h2>Scoring Formula</h2>
+      <div class="ffwi-box" style="border-left-color:#ff9800;">
+        <h3 style="color:#ff9800;">Composite Score</h3>
+        <p><code>Score = (FHSZ × 0.60) + (History × 0.15) + (FFWI × 0.12) + (Slope × 0.06) + (CPUC × 0.05) + (Drought × 0.02)</code></p>
+        <p>Each factor returns a value in the 0–10 range before weighting. The final score is rounded to one decimal place and clamped between 1 and 10.</p>
+      </div>
+      <h2>Factor Details</h2>
+      <div class="weights-grid" id="methodCards"></div>
+      <h2>Fosberg Fire Weather Index (FFWI)</h2>
+      <div class="ffwi-box">
+        <h3>Live Weather Component</h3>
+        <p>The FFWI quantifies fire potential from atmospheric conditions. Calculated from temperature (°F), relative humidity (%), and wind speed (mph).</p>
+        <p>Step 1 — Moisture damping coefficient: <code>η = 1 − 2(m/30) + 1.5(m/30)² − 0.5(m/30)³</code></p>
+        <p>Step 2 — Fire potential: <code>FFWI = η × √(1 + wind²) / 0.3002</code></p>
+        <p>Values above 50 indicate extreme fire weather. Fetched live from <code>api.open-meteo.com</code> — free, no API key required.</p>
+      </div>
+      <h2>Data Sources</h2>
+      <table class="score-table" style="width:100%;margin-top:0;">
+        <thead><tr><th>Factor</th><th>Source</th><th>Endpoint</th><th>Update Freq</th></tr></thead>
+        <tbody>
+          <tr><td>FHSZ</td><td>CAL FIRE / CA Open Data</td><td>services.gis.ca.gov MapServer/0</td><td>Annual</td></tr>
+          <tr><td>Historic Burns</td><td>CAL FIRE FRAP</td><td>services1.arcgis.com FeatureServer/0</td><td>Annual</td></tr>
+          <tr><td>Live Weather</td><td>Open-Meteo</td><td>api.open-meteo.com/v1/forecast</td><td>Hourly</td></tr>
+          <tr><td>Slope</td><td>Open-Elevation</td><td>api.open-elevation.com</td><td>Static</td></tr>
+          <tr><td>CPUC HFTD</td><td>CPUC / CAL FIRE</td><td>services2.arcgis.com FeatureServer</td><td>Annual</td></tr>
+          <tr><td>Drought</td><td>Open-Meteo Historical</td><td>archive-api.open-meteo.com</td><td>Weekly</td></tr>
+        </tbody>
+      </table>
+      <h2>Score Interpretation</h2>
+      <table class="score-table" style="width:100%;margin-top:0;">
+        <thead><tr><th>Score</th><th>Class</th><th>Description</th></tr></thead>
+        <tbody id="interpTable"></tbody>
+      </table>
+      <h2>Limitations & Disclaimer</h2>
+      <p>This tool is a portfolio demonstration of GIS data engineering and multi-source spatial analysis. It is <strong>not</strong> a certified fire hazard assessment and should not be used for insurance, real estate, or emergency management decisions.</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  CONSTANTS & CONFIG
+// ══════════════════════════════════════════════════════
+
+const FRAP_FS     = 'https://services1.arcgis.com/jUJYIo9tSA7EHvfZ/arcgis/rest/services/California_Historic_Fire_Perimeters/FeatureServer/0';
+const CPUC_FS_T3  = 'https://services.arcgis.com/BLN4oKB0N1YSgvY8/arcgis/rest/services/CPUC_Fire_Threat_Areas/FeatureServer/0';
+const CPUC_FS_T2  = 'https://services.arcgis.com/BLN4oKB0N1YSgvY8/arcgis/rest/services/CPUC_Fire_Threat_Areas/FeatureServer/1';
+const WEATHER     = 'https://api.open-meteo.com/v1/forecast';
+const DROUGHT_API = 'https://archive-api.open-meteo.com/v1/archive';
+const ELEV_API    = 'https://api.open-elevation.com/api/v1/lookup';
+const NOMINATIM   = 'https://nominatim.openstreetmap.org/search';
+
+const FHSZ_MS_BASE   = 'https://services.gis.ca.gov/arcgis/rest/services/Environment/Fire_Severity_Zones/MapServer';
+const FHSZ_SRA_LAYER = `${FHSZ_MS_BASE}/0`;
+const FHSZ_LRA_LAYER = `${FHSZ_MS_BASE}/1`;
+const FRAP_MS_BASE   = 'https://egis.fire.ca.gov/arcgis/rest/services/FRAP/FirePerimeters_FS/MapServer';
+
+const SCORE_WEIGHTS = {
+  fhsz:    { w: 0.60, color: '#7c4dff', label: 'Fire Hazard Severity' },
+  history: { w: 0.15, color: '#ff6d00', label: 'Burn History' },
+  ffwi:    { w: 0.12, color: '#00bcd4', label: 'FFWI Weather' },
+  slope:   { w: 0.06, color: '#4caf50', label: 'Slope Terrain' },
+  cpuc:    { w: 0.05, color: '#f44336', label: 'CPUC HFTD' },
+  drought: { w: 0.02, color: '#ff9800', label: 'Drought Index' },
+};
+
+const SCORE_CLASSES = [
+  { min:1,  max:2,  label:'Minimal',   desc:'Very low probability of wildfire ignition or spread.' },
+  { min:2,  max:3,  label:'Very Low',  desc:'Low hazard; mostly developed or wet areas.' },
+  { min:3,  max:4,  label:'Low',       desc:'Below-average fire risk for California.' },
+  { min:4,  max:5,  label:'Moderate',  desc:'Average California fire risk; moderate fuel load.' },
+  { min:5,  max:6,  label:'Elevated',  desc:'Above-average risk; fire weather or terrain concerns.' },
+  { min:6,  max:7,  label:'High',      desc:'Significant hazard — CAL FIRE High zone or active drought.' },
+  { min:7,  max:8,  label:'Very High', desc:'Major risk factors present; defensible space critical.' },
+  { min:8,  max:9,  label:'Extreme',   desc:'CAL FIRE Very High zone with adverse weather conditions.' },
+  { min:9,  max:10, label:'Critical',  desc:'Multiple extreme factors — evacuate under Red Flag Warning.' },
+  { min:10, max:10, label:'Maximum',   desc:'All factors at maximum. Extreme fire behavior expected.' },
+];
+
+const FACTOR_DESCS = {
+  fhsz:    { desc: 'CAL FIRE FHSZ covering SRA (Moderate=4, High=7, Very High=10) and LRA (Very High=10). Based on fuel loading, slope, fire weather, and ember risk over a 30–50 year horizon.', src: 'services.gis.ca.gov', url: 'https://services.gis.ca.gov/arcgis/rest/services/Environment/Fire_Severity_Zones/MapServer/0' },
+  history: { desc: 'Count of CAL FIRE FRAP fire perimeters whose actual burn geometry contains the clicked point since 1950, weighted by recency. True point-in-polygon — only fires that literally burned through this location.', src: 'FRAP FeatureServer', url: 'https://services1.arcgis.com/jUJYIo9tSA7EHvfZ/arcgis/rest/services/California_Historic_Fire_Perimeters/FeatureServer/0' },
+  ffwi:    { desc: 'Fosberg Fire Weather Index — computed from live Open-Meteo temperature, relative humidity, and wind speed. 0 = no fire weather; 100+ = extreme fire conditions.', src: 'api.open-meteo.com', url: 'https://open-meteo.com/' },
+  slope:   { desc: 'Terrain elevation change proxy from the Open-Elevation API. Steeper slopes accelerate fire spread. Elevation delta between point and 1km offset used as slope surrogate.', src: 'api.open-elevation.com', url: 'https://api.open-elevation.com/' },
+  cpuc:    { desc: 'CPUC High Fire Threat District tier. Tier 2 (Elevated)=6, Tier 3 (Extreme)=10. Based on overhead power line fire risk. Scores 0 outside HFTD boundary.', src: 'CPUC / CAL FIRE FeatureServer', url: 'https://services2.arcgis.com/VofPZYDe2pLxSP5G/arcgis/rest/services/CPUC_High_Fire_Threat_District/FeatureServer/0' },
+  drought: { desc: '90-day precipitation deficit relative to a 250mm baseline from Open-Meteo Archive API. Dry conditions desiccate fuels. Score = min(10, max(0, 250 − total_mm) / 25). Normalized 0–10.', src: 'archive-api.open-meteo.com', url: 'https://open-meteo.com/en/docs/historical-weather-api' },
+};
+
+// ══════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════
+let map, baseLayers = {};
+let overlayLayers = {};   // active L.GridLayer instances keyed by layer id
+let cpucLayer     = null;
+let currentMarker = null, currentLatlng = null;
+
+let layerState = {
+  fhsz:    { on:true,  label:'FHSZ — SRA (State Lands)',   color:'#7c4dff', src:'CAL FIRE',      type:'export', msBase: FHSZ_MS_BASE, exportLayer:'show:0', opacity:0.75 },
+  fhszLra: { on:true,  label:'FHSZ — LRA (Local/Urban)',   color:'#e040fb', src:'CAL FIRE',      type:'export', msBase: FHSZ_MS_BASE, exportLayer:'show:1', opacity:0.75 },
+  frap:    { on:false, label:'Historical Fire Perimeters', color:'#ff6d00', src:'CAL FIRE FRAP', type:'export', msBase: FRAP_MS_BASE,  exportLayer:'show:0', opacity:0.65 },
+  cpuc:    { on:false, label:'CPUC Fire Threat District',  color:'#f44336', src:'CPUC',          type:'geojson' },
+};
+
+// ══════════════════════════════════════════════════════
+//  DYNAMIC TILE LAYER — ArcGIS MapServer /export per tile
+//
+//  Replaces the old static full-CA imageOverlay approach.
+//  Each 256×256 tile fires its own bbox-scoped /export
+//  request, giving crisp server-rendered imagery at every
+//  zoom level. Tiles are fetched on demand as you pan/zoom.
+// ══════════════════════════════════════════════════════
+
+// Degrees → Web Mercator meters (EPSG:3857)
+// ArcGIS MapServers use 3857 natively; sending bbox in the server's own CRS
+// avoids a server-side reprojection step and prevents any mismatch.
+function lngToMerc(lng) {
+  return lng * 20037508.342789244 / 180;
+}
+function latToMerc(lat) {
+  const rad = lat * Math.PI / 180;
+  return Math.log(Math.tan(Math.PI / 4 + rad / 2)) * 20037508.342789244 / Math.PI;
+}
+
+function createArcGISExportLayer(msBase, exportLayer, defaultOpacity) {
+  return L.GridLayer.extend({
+    options: {
+      tileSize:    256,
+      opacity:     defaultOpacity || 0.75,
+      zIndex:      200,
+      keepBuffer:  2,
+      attribution: '© CAL FIRE / CA Open Data',
+    },
+
+    createTile(coords, done) {
+      const img = document.createElement('img');
+      img.style.cssText = 'width:100%;height:100%;display:block;';
+      img.setAttribute('role', 'presentation');
+
+      // Convert tile coords → LatLng corners
+      const tileSize = this.getTileSize();
+      const nwPx = coords.scaleBy(tileSize);
+      const sePx = nwPx.add(tileSize);
+      const nw   = this._map.unproject(nwPx, coords.z);
+      const se   = this._map.unproject(sePx, coords.z);
+
+      // Convert to Web Mercator (3857) — matches server's native CRS
+      const xmin = lngToMerc(nw.lng);
+      const ymax = latToMerc(nw.lat);
+      const xmax = lngToMerc(se.lng);
+      const ymin = latToMerc(se.lat);
+      const bbox = `${xmin},${ymin},${xmax},${ymax}`;
+
+      // HiDPI: request double pixels, CSS size stays 256px → crisp on retina
+      const dpr = window.devicePixelRatio || 1;
+      const px  = Math.round(tileSize.x * dpr);
+      const py  = Math.round(tileSize.y * dpr);
+
+      // ⚠ IMPORTANT: do NOT use URLSearchParams for the full query string.
+      // URLSearchParams encodes colons (%3A), turning "show:0" into "show%3A0"
+      // which ArcGIS MapServer silently ignores, returning a blank/error image.
+      // Build the query string manually so "layers=show:0" stays unencoded.
+      const layer = exportLayer || 'show:0';
+      const qs = `bbox=${encodeURIComponent(bbox)}`
+        + `&bboxSR=3857`
+        + `&imageSR=3857`
+        + `&size=${px},${py}`
+        + `&format=png32`
+        + `&transparent=true`
+        + `&f=image`
+        + `&layers=${layer}`;   // colon intentionally NOT encoded
+
+      img.onload  = () => done(null, img);
+      img.onerror = () => {
+        img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        done(null, img);
+      };
+
+      img.src = `${msBase}/export?${qs}`;
+      return img;
+    },
+  });
+}
+
+// Pre-build one GridLayer class per export layer
+const ExportLayerClasses = {
+  fhsz:    createArcGISExportLayer(FHSZ_MS_BASE, 'show:0', 0.75),
+  fhszLra: createArcGISExportLayer(FHSZ_MS_BASE, 'show:1', 0.75),
+  frap:    createArcGISExportLayer(FRAP_MS_BASE,  'show:0', 0.65),
+};
+
+function addExportLayer(k) {
+  if (overlayLayers[k]) return;          // already on map
+  const v   = layerState[k];
+  const Cls = ExportLayerClasses[k];
+  if (!Cls) return;
+  overlayLayers[k] = new Cls({ opacity: v.opacity }).addTo(map);
+}
+
+function removeExportLayer(k) {
+  if (overlayLayers[k]) {
+    map.removeLayer(overlayLayers[k]);
+    delete overlayLayers[k];
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════════════
+function initMap() {
+  map = L.map('map', { center:[37.5,-119.5], zoom:6, preferCanvas:true });
+
+  baseLayers.dark = L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    { attribution:'© OpenStreetMap © CARTO', maxZoom:19 }
+  ).addTo(map);
+
+  baseLayers.topo = L.tileLayer(
+    'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    { attribution:'© OpenTopoMap', maxZoom:17 }
+  );
+
+  baseLayers.satellite = L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { attribution:'Tiles © Esri', maxZoom:19 }
+  );
+
+  L.control.scale({ imperial:true, metric:false }).addTo(map);
+
+  map.on('click', e => {
+    dismissHero();
+    currentLatlng = e.latlng;
+    placeMarker(e.latlng);
+    scoreLocation(e.latlng);
+  });
+
+  buildLayerToggles();
+  buildFactorCards();
+  buildMethodCards();
+  buildInterpTable();
+
+  // Add initially-on export layers once map is ready
+  map.whenReady(() => {
+    Object.entries(layerState).forEach(([k, v]) => {
+      if (v.on && v.type === 'export') addExportLayer(k);
+    });
+    setLoad('Ready.', 100);
+    setTimeout(hideLoad, 300);
+  });
+}
+
+// ══════════════════════════════════════════════════════
+//  MARKER
+// ══════════════════════════════════════════════════════
+function placeMarker(latlng) {
+  if (currentMarker) map.removeLayer(currentMarker);
+  currentMarker = L.marker(latlng, {
+    icon: L.divIcon({
+      html: `<div style="width:16px;height:16px;border-radius:50%;background:#ff9800;border:2px solid white;box-shadow:0 0 12px #ff9800aa;"></div>`,
+      iconAnchor:[8,8], className:''
+    })
+  }).addTo(map);
+}
+
+// ══════════════════════════════════════════════════════
+//  AUTOCOMPLETE / SEARCH
+// ══════════════════════════════════════════════════════
+let heroItems = [], heroIndex = -1, heroDebounce = null;
+
+function fuzzyScore(str, query) {
+  str   = str.toLowerCase();
+  query = query.toLowerCase();
+  if (str.startsWith(query)) return 1;
+  if (str.includes(query))   return 0.9;
+  let si = 0, qi = 0, gaps = 0;
+  while (si < str.length && qi < query.length) {
+    if (str[si] === query[qi]) qi++;
+    else gaps++;
+    si++;
+  }
+  if (qi < query.length) return 0;
+  return Math.max(0, 0.8 - gaps * 0.05);
+}
+
+function highlightMatch(text, query) {
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx < 0) return text;
+  return text.slice(0, idx)
+    + `<mark>${text.slice(idx, idx + query.length)}</mark>`
+    + text.slice(idx + query.length);
+}
+
+const CA_FIRES = [
+  {name:'Camp',                year:2018, county:'Butte',          acres:153336,  lat:39.75,  lng:-121.62},
+  {name:'Dixie',               year:2021, county:'Plumas',         acres:963309,  lat:40.10,  lng:-121.15},
+  {name:'August Complex',      year:2020, county:'Trinity',        acres:1032648, lat:40.15,  lng:-123.10},
+  {name:'Mendocino Complex',   year:2018, county:'Mendocino',      acres:459123,  lat:39.25,  lng:-122.85},
+  {name:'Thomas',              year:2017, county:'Ventura',        acres:281893,  lat:34.45,  lng:-119.10},
+  {name:'Cedar',               year:2003, county:'San Diego',      acres:273246,  lat:33.05,  lng:-116.60},
+  {name:'Rush',                year:2012, county:'Lassen',         acres:315577,  lat:40.65,  lng:-120.60},
+  {name:'North Complex',       year:2020, county:'Plumas',         acres:318935,  lat:39.80,  lng:-121.15},
+  {name:'Caldor',              year:2021, county:'El Dorado',      acres:221835,  lat:38.65,  lng:-120.30},
+  {name:'Rim',                 year:2013, county:'Tuolumne',       acres:257314,  lat:37.90,  lng:-119.85},
+  {name:'King',                year:2014, county:'Fresno',         acres:97717,   lat:36.90,  lng:-119.00},
+  {name:'Carr',                year:2018, county:'Shasta',         acres:229651,  lat:40.65,  lng:-122.55},
+  {name:'Kincade',             year:2019, county:'Sonoma',         acres:77758,   lat:38.80,  lng:-122.95},
+  {name:'LNU Lightning Complex',year:2020,county:'Napa',           acres:363220,  lat:38.70,  lng:-122.40},
+  {name:'SCU Lightning Complex',year:2020,county:'Santa Clara',    acres:396624,  lat:37.55,  lng:-121.55},
+  {name:'Zogg',                year:2020, county:'Shasta',         acres:56338,   lat:40.60,  lng:-122.68},
+  {name:'Glass',               year:2020, county:'Napa',           acres:67484,   lat:38.55,  lng:-122.45},
+  {name:'Antelope',            year:2021, county:'Lassen',         acres:145108,  lat:40.40,  lng:-120.35},
+  {name:'Mosquito',            year:2022, county:'Placer',         acres:76788,   lat:39.10,  lng:-120.75},
+  {name:'Oak',                 year:2022, county:'Siskiyou',       acres:174861,  lat:41.70,  lng:-122.55},
+  {name:'McKinney',            year:2022, county:'Siskiyou',       acres:60138,   lat:41.85,  lng:-123.00},
+  {name:'Windy',               year:2021, county:'Tulare',         acres:97521,   lat:36.25,  lng:-118.55},
+  {name:'Monument',            year:2021, county:'Trinity',        acres:223230,  lat:40.70,  lng:-123.10},
+  {name:'Beckwourth Complex',  year:2021, county:'Plumas',         acres:105567,  lat:39.95,  lng:-120.40},
+  {name:'Woolsey',             year:2018, county:'Los Angeles',    acres:96949,   lat:34.10,  lng:-118.85},
+  {name:'Creek',               year:2017, county:'Los Angeles',    acres:15619,   lat:34.35,  lng:-118.40},
+  {name:'Detwiler',            year:2017, county:'Mariposa',       acres:81826,   lat:37.55,  lng:-120.25},
+  {name:'Soberanes',           year:2016, county:'Monterey',       acres:132127,  lat:36.40,  lng:-121.70},
+  {name:'Blue Cut',            year:2016, county:'San Bernardino', acres:36432,   lat:34.25,  lng:-117.55},
+  {name:'Erskine',             year:2016, county:'Kern',           acres:48000,   lat:35.80,  lng:-118.35},
+  {name:'Valley',              year:2015, county:'Lake',           acres:76067,   lat:38.95,  lng:-122.65},
+  {name:'Butte',               year:2015, county:'Amador',         acres:70868,   lat:38.45,  lng:-120.80},
+  {name:'Station',             year:2009, county:'Los Angeles',    acres:160577,  lat:34.28,  lng:-117.96},
+  {name:'Zaca',                year:2007, county:'Santa Barbara',  acres:240207,  lat:34.75,  lng:-119.90},
+  {name:'Witch',               year:2007, county:'San Diego',      acres:197990,  lat:33.15,  lng:-116.65},
+  {name:'Moonlight',           year:2007, county:'Plumas',         acres:65064,   lat:40.15,  lng:-120.60},
+  {name:'Old',                 year:2003, county:'San Bernardino', acres:91281,   lat:34.20,  lng:-117.00},
+  {name:'Paradise',            year:2008, county:'Butte',          acres:23609,   lat:39.76,  lng:-121.62},
+];
+
+function dismissHero() {
+  document.getElementById('heroSearch').classList.add('minimized');
+}
+function restoreHero() {
+  document.getElementById('heroSearch').classList.remove('minimized');
+  document.getElementById('heroInp').focus();
+}
+
+function onHeroInput(val) {
+  clearTimeout(heroDebounce);
+  heroIndex = -1;
+  if (!val || val.length < 2) { closeHeroDropdown(); return; }
+  if (/^-?\d+\.?\d*\s*,\s*-?\d+\.?\d*$/.test(val)) { closeHeroDropdown(); return; }
+  showHeroSpinner();
+  heroDebounce = setTimeout(() => fetchHeroSuggestions(val), 280);
+}
+
+async function fetchHeroSuggestions(q) {
+  try {
+    const r = await fetch(`${NOMINATIM}?q=${encodeURIComponent(q + ', California')}&format=json&limit=6&countrycodes=us&addressdetails=1`);
+    const places = await r.json();
+    const suggestions = places.map(p => ({
+      label: p.display_name.split(',').slice(0,2).join(',').trim(),
+      sub:   p.display_name.split(',').slice(2,4).join(',').trim(),
+      type:  p.type || p.class || '',
+      lat: parseFloat(p.lat), lng: parseFloat(p.lon),
+      zoom: p.importance > 0.5 ? 13 : 11,
+    }));
+    const fireHits = CA_FIRES
+      .map(f => ({ f, score: fuzzyScore(f.name, q) }))
+      .filter(x => x.score > 0.4)
+      .sort((a,b) => b.score - a.score)
+      .slice(0,3)
+      .map(x => ({
+        label: `${x.f.name} Fire (${x.f.year})`,
+        sub:   `${x.f.county} County · ${Math.round(x.f.acres).toLocaleString()} acres`,
+        type: 'historic fire', lat: x.f.lat, lng: x.f.lng, zoom: 11,
+      }));
+    const looksLikeFire = /fire|burn|blaze/i.test(q);
+    heroItems = looksLikeFire ? [...fireHits, ...suggestions] : [...suggestions, ...fireHits];
+    renderHeroDropdown(q);
+  } catch(e) { closeHeroDropdown(); }
+}
+
+function renderHeroDropdown(q) {
+  const dd = document.getElementById('heroDropdown');
+  if (!heroItems.length) { closeHeroDropdown(); return; }
+  dd.innerHTML = heroItems.map((item,i) => `
+    <div class="ac-item" data-i="${i}" onmousedown="selectHeroSuggestion(${i})">
+      <div class="ac-item-name">${highlightMatch(item.label, q)}</div>
+      ${item.sub ? `<div class="ac-item-sub">${item.sub}</div>` : ''}
+      <div class="ac-item-type">${item.type}</div>
+    </div>
+  `).join('');
+  dd.classList.add('open');
+}
+
+function showHeroSpinner() {
+  const dd = document.getElementById('heroDropdown');
+  dd.innerHTML = '<div class="ac-spinner">Searching...</div>';
+  dd.classList.add('open');
+}
+
+function openHeroDropdown() {
+  if (heroItems.length) document.getElementById('heroDropdown').classList.add('open');
+}
+
+function closeHeroDropdown() {
+  document.getElementById('heroDropdown').classList.remove('open');
+  heroItems = []; heroIndex = -1;
+}
+
+function selectHeroSuggestion(i) {
+  const item = heroItems[i];
+  if (!item) return;
+  document.getElementById('heroInp').value = item.label;
+  closeHeroDropdown();
+  const ll = L.latLng(item.lat, item.lng);
+  map.setView(ll, item.zoom);
+  placeMarker(ll);
+  currentLatlng = ll;
+  document.getElementById('heroHint').textContent = item.sub || item.label;
+  dismissHero();
+  scoreLocation(ll);
+}
+
+function onHeroKeydown(e) {
+  const dd   = document.getElementById('heroDropdown');
+  const open = dd.classList.contains('open');
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (!open && heroItems.length) { openHeroDropdown(); return; }
+    heroIndex = Math.min(heroIndex + 1, heroItems.length - 1);
+    updateHeroActiveItem();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    heroIndex = Math.max(heroIndex - 1, -1);
+    updateHeroActiveItem();
+  } else if (e.key === 'Enter') {
+    if (open && heroIndex >= 0) { e.preventDefault(); selectHeroSuggestion(heroIndex); }
+    else { closeHeroDropdown(); doHeroSearch(); }
+  } else if (e.key === 'Escape') {
+    closeHeroDropdown();
+  }
+}
+
+function updateHeroActiveItem() {
+  document.querySelectorAll('#heroDropdown .ac-item').forEach((el,i) => {
+    el.classList.toggle('active', i === heroIndex);
+    if (i === heroIndex) el.scrollIntoView({ block:'nearest' });
+  });
+}
+
+async function doHeroSearch() {
+  const q = document.getElementById('heroInp').value.trim();
+  if (!q) return;
+  closeHeroDropdown();
+  document.getElementById('heroHint').textContent = 'Locating…';
+  if (/^-?\d+\.?\d*\s*,\s*-?\d+\.?\d*$/.test(q)) {
+    const [lat,lng] = q.split(',').map(Number);
+    const ll = L.latLng(lat, lng);
+    map.setView(ll, 12); placeMarker(ll); currentLatlng = ll;
+    dismissHero(); scoreLocation(ll); return;
+  }
+  try {
+    const r = await fetch(`${NOMINATIM}?q=${encodeURIComponent(q+', California')}&format=json&limit=1&countrycodes=us`);
+    const d = await r.json();
+    if (!d.length) { document.getElementById('heroHint').textContent = 'No results — try again.'; return; }
+    const pl = d[0];
+    const ll = L.latLng(parseFloat(pl.lat), parseFloat(pl.lon));
+    map.setView(ll, 13); placeMarker(ll); currentLatlng = ll;
+    dismissHero(); scoreLocation(ll);
+  } catch(e) { document.getElementById('heroHint').textContent = 'Search failed.'; }
+}
+
+// Close dropdowns on outside click
+document.addEventListener('mousedown', e => {
+  if (!e.target.closest('.ac-wrap'))
+    closeHeroDropdown();
+  if (!e.target.closest('.legend-btn') && !e.target.closest('.legend-panel')) {
+    document.getElementById('legendPanel').classList.remove('open');
+    document.getElementById('legendBtn').classList.remove('open');
+  }
+});
+
+// ══════════════════════════════════════════════════════
+//  LEGEND TOGGLE
+// ══════════════════════════════════════════════════════
+function toggleLegend() {
+  const btn   = document.getElementById('legendBtn');
+  const panel = document.getElementById('legendPanel');
+  const open  = panel.classList.toggle('open');
+  btn.classList.toggle('open', open);
+}
+
+// ══════════════════════════════════════════════════════
+//  SCORE PIPELINE — all 6 factor fetches in parallel
+// ══════════════════════════════════════════════════════
+async function scoreLocation(latlng) {
+  const wrap = document.getElementById('scoreWrap');
+  wrap.innerHTML = `<div class="score-empty"><div style="color:#ff9800">Querying 6 data sources in parallel...</div></div>`;
+
+  const lat = latlng.lat, lng = latlng.lng;
+  const factors = {};
+
+  const today        = new Date();
+  const droughtEnd   = today.toISOString().split('T')[0];
+  const droughtStart = new Date(today - 90*86400000).toISOString().split('T')[0];
+  const offset       = 0.009;
+
+  const [fhszRes, histRes, weatherRes, elevRes, cpucRes, droughtRes] =
+    await Promise.allSettled([
+
+      // 1. FHSZ — SRA layer 0 + LRA layer 1
+      Promise.all([
+        fetch(`${FHSZ_SRA_LAYER}/query?` + new URLSearchParams({
+          geometry:`${lng},${lat}`, geometryType:'esriGeometryPoint',
+          spatialRel:'esriSpatialRelIntersects', inSR:'4326',
+          outFields:'HAZ_CLASS,SRA', returnGeometry:'false', f:'json'
+        })).then(r=>r.json()),
+        fetch(`${FHSZ_LRA_LAYER}/query?` + new URLSearchParams({
+          geometry:`${lng},${lat}`, geometryType:'esriGeometryPoint',
+          spatialRel:'esriSpatialRelIntersects', inSR:'4326',
+          outFields:'HAZ_CLASS,SRA', returnGeometry:'false', f:'json'
+        })).then(r=>r.json()),
+      ]),
+
+      // 2. FRAP — point-in-polygon
+      fetch(`${FRAP_FS}/query?` + new URLSearchParams({
+        where:'YEAR_ >= 1950',
+        geometry:`${lng},${lat}`, geometryType:'esriGeometryPoint',
+        spatialRel:'esriSpatialRelIntersects', inSR:'4326',
+        outFields:'YEAR_,GIS_ACRES', returnGeometry:'false',
+        f:'json', resultRecordCount:500
+      })).then(r=>r.json()),
+
+      // 3. Open-Meteo current weather
+      fetch(`${WEATHER}?` + new URLSearchParams({
+        latitude:lat, longitude:lng,
+        current:'temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,precipitation',
+        wind_speed_unit:'mph', temperature_unit:'fahrenheit',
+        timezone:'America/Los_Angeles'
+      })).then(r=>r.json()),
+
+      // 4. Open-Elevation slope proxy
+      fetch(`${ELEV_API}?locations=${lat},${lng}|${lat+offset},${lng+offset}`).then(r=>r.json()),
+
+      // 5. CPUC — Tier 3 and Tier 2
+      Promise.all([
+        fetch(`${CPUC_FS_T3}/query?` + new URLSearchParams({
+          geometry:`${lng},${lat}`, geometryType:'esriGeometryPoint',
+          spatialRel:'esriSpatialRelIntersects', inSR:'4326',
+          outFields:'FID_1', returnGeometry:'false', f:'json'
+        })).then(r=>r.json()),
+        fetch(`${CPUC_FS_T2}/query?` + new URLSearchParams({
+          geometry:`${lng},${lat}`, geometryType:'esriGeometryPoint',
+          spatialRel:'esriSpatialRelIntersects', inSR:'4326',
+          outFields:'FID_1', returnGeometry:'false', f:'json'
+        })).then(r=>r.json()),
+      ]),
+
+      // 6. 90-day precipitation
+      fetch(`${DROUGHT_API}?` + new URLSearchParams({
+        latitude:lat, longitude:lng,
+        start_date:droughtStart, end_date:droughtEnd,
+        daily:'precipitation_sum', timezone:'America/Los_Angeles'
+      })).then(r=>r.json()),
+    ]);
+
+  // 1. FHSZ
+  try {
+    const [sraDat, lraDat] = fhszRes.value || [];
+    const sraFeat = sraDat?.features?.[0]?.attributes;
+    const lraFeat = lraDat?.features?.[0]?.attributes;
+    const scoreHz = hz => {
+      const h = (hz||'').toLowerCase();
+      return h.includes('very high')||h.includes('vhigh') ? 10
+           : h.includes('high') ? 7
+           : h.includes('moderate') ? 4 : 2;
+    };
+    if (lraFeat) {
+      factors.fhsz = 10;
+      factors.fhsz_label = (lraFeat.HAZ_CLASS || 'Very High') + ' (LRA)';
+    } else if (sraFeat) {
+      factors.fhsz = scoreHz(sraFeat.HAZ_CLASS);
+      factors.fhsz_label = (sraFeat.HAZ_CLASS || 'Unknown') + ' (SRA)';
+    } else {
+      factors.fhsz = 1; factors.fhsz_label = 'Unclassified';
+    }
+  } catch(e) { factors.fhsz = 2; factors.fhsz_label = 'Query error'; }
+
+  // 2. Historical
+  try {
+    const feats  = histRes.value?.features || [];
+    const cnt    = feats.length;
+    let totalAcres = 0, recent = 0;
+    feats.forEach(f => { totalAcres += (f.attributes.GIS_ACRES||0); if (f.attributes.YEAR_ >= 2000) recent++; });
+    const cntScore    = Math.min(10, Math.log1p(cnt)    / Math.log1p(4) * 10);
+    const recentScore = Math.min(10, Math.log1p(recent) / Math.log1p(3) * 10);
+    factors.history        = Math.round(Math.min(10, cntScore + recentScore * 0.2) * 10) / 10;
+    factors.history_count  = cnt;
+    factors.history_acres  = Math.round(totalAcres);
+    factors.history_recent = recent;
+  } catch(e) { factors.history = 0; factors.history_count = 0; }
+
+  // 3. Weather / FFWI
+  try {
+    const c      = weatherRes.value?.current || {};
+    const temp   = c.temperature_2m    || 70;
+    const rh     = c.relative_humidity_2m || 30;
+    const wind   = c.wind_speed_10m    || 5;
+    const gusts  = c.wind_gusts_10m   || wind;
+    const precip = c.precipitation     || 0;
+    const ffwi   = computeFFWI(temp, rh, Math.max(wind, gusts));
+    factors.ffwi     = Math.min(10, ffwi / 10);
+    factors.ffwi_raw = Math.round(ffwi * 10) / 10;
+    factors.weather  = { temp, rh, wind, gusts, precip };
+    if (precip > 0) factors.ffwi = Math.max(0, factors.ffwi - precip * 2);
+  } catch(e) { factors.ffwi = 4; factors.ffwi_raw = 40; factors.weather = {}; }
+
+  // 4. Slope
+  try {
+    const res = elevRes.value?.results;
+    if (res && res.length >= 2) {
+      const rise = Math.abs(res[1].elevation - res[0].elevation);
+      const pct  = (rise / (offset * 111000)) * 100;
+      factors.slope     = Math.min(10, pct / 3);
+      factors.slope_pct = Math.round(pct * 10) / 10;
+      factors.elevation = res[0].elevation;
+    } else { factors.slope = 3; }
+  } catch(e) { factors.slope = 3; }
+
+  // 5. CPUC
+  try {
+    const [t3, t2] = cpucRes.value || [];
+    const inT3 = t3?.features?.length > 0;
+    const inT2 = t2?.features?.length > 0;
+    const tier = inT3 ? 3 : inT2 ? 2 : 0;
+    factors.cpuc      = tier === 3 ? 10 : tier === 2 ? 6 : 0;
+    factors.cpuc_tier = tier ? `Tier ${tier} — ${tier===3?'Extreme':'Elevated'}` : 'Not in HFTD';
+  } catch(e) { factors.cpuc = 0; factors.cpuc_tier = 'Unknown'; }
+
+  // 6. Drought
+  try {
+    const psum = droughtRes.value?.daily?.precipitation_sum;
+    if (psum) {
+      const total   = psum.reduce((s,v) => s + (v||0), 0);
+      const deficit = Math.max(0, 250 - total);
+      factors.drought         = Math.min(10, deficit / 25);
+      factors.drought_mm      = Math.round(total   * 10) / 10;
+      factors.drought_deficit = Math.round(deficit * 10) / 10;
+    } else { factors.drought = 4; }
+  } catch(e) { factors.drought = 4; }
+
+  // FINAL SCORE
+  const raw =
+    factors.fhsz    * SCORE_WEIGHTS.fhsz.w    +
+    factors.history * SCORE_WEIGHTS.history.w  +
+    factors.ffwi    * SCORE_WEIGHTS.ffwi.w     +
+    factors.slope   * SCORE_WEIGHTS.slope.w    +
+    factors.cpuc    * SCORE_WEIGHTS.cpuc.w     +
+    factors.drought * SCORE_WEIGHTS.drought.w;
+
+  // FHSZ-anchored soft floor: instead of hard-clamping scores below the
+  // floor to one value, close 40% of the gap. Scores are nudged up
+  // proportionally so differentiation is preserved across the range.
+  const fhszFloor  = factors.fhsz >= 10 ? 7.5
+                   : factors.fhsz >= 7  ? 5.0
+                   : factors.fhsz >= 4  ? 3.0 : 1.0;
+
+  const rawClamped = Math.min(10, raw);
+  const gap        = Math.max(0, fhszFloor - rawClamped);
+  const boosted    = rawClamped + gap * 0.40;
+
+  factors.score      = Math.round(Math.min(10, boosted) * 10) / 10;
+  factors.fhsz_floor = fhszFloor;
+
+  renderScoreCard(factors, latlng);
+  updateFactorCards(factors);
+  renderPopup(factors, latlng);
+}
+
+// ══════════════════════════════════════════════════════
+//  FFWI
+// ══════════════════════════════════════════════════════
+function computeFFWI(tempF, rh, windMph) {
+  const h = Math.max(1, Math.min(99, rh));
+  let m;
+  if      (h < 10) m = 0.03229  + 0.281073 * h - 0.000578  * h * tempF;
+  else if (h < 50) m = 2.22749  + 0.160107 * h - 0.014784  * tempF;
+  else             m = 21.0606  + 0.005565 * h * h - 0.00035 * h * tempF - 0.483199 * h;
+  m = Math.max(0, Math.min(30, m));
+  const eta  = 1 - 2*(m/30) + 1.5*Math.pow(m/30,2) - 0.5*Math.pow(m/30,3);
+  return Math.max(0, eta * Math.sqrt(1 + windMph * windMph) / 0.3002);
+}
+
+// ══════════════════════════════════════════════════════
+//  SCORE CARD
+// ══════════════════════════════════════════════════════
+function scoreColor(s) {
+  const i = Math.round(Math.max(1, Math.min(10, s)));
+  return getComputedStyle(document.documentElement).getPropertyValue(`--s${i}`).trim() || '#ff9800';
+}
+
+function scoreLabel(s) {
+  for (const c of SCORE_CLASSES) if (s >= c.min && s <= c.max) return c.label;
+  return 'Unknown';
+}
+
+function renderScoreCard(f, latlng) {
+  const s   = f.score;
+  const col = scoreColor(s);
+  const lbl = scoreLabel(s);
+  const pct = ((s-1)/9*100).toFixed(1);
+
+  const barsHtml = ['fhsz','history','ffwi','slope','cpuc','drought'].map(k => {
+    const v   = Math.max(0, Math.min(10, f[k]||0));
+    const cfg = SCORE_WEIGHTS[k];
+    return `
+      <div class="factor-row">
+        <div class="factor-label" title="${cfg.label}">${cfg.label}</div>
+        <div class="factor-track"><div class="factor-fill" style="width:${v*10}%;background:${cfg.color}"></div></div>
+        <div class="factor-raw">${v.toFixed(1)}</div>
+        <div class="factor-wt">+${(v*cfg.w).toFixed(2)}</div>
+      </div>`;
+  }).join('');
+
+  const wth = f.weather || {};
+  const weatherHtml = Object.keys(wth).length ? `
+    <div class="weather-mini">
+      <div class="wm-cell"><div class="wm-label">Temp</div><div class="wm-val">${Math.round(wth.temp||0)}°F</div></div>
+      <div class="wm-cell"><div class="wm-label">Humidity</div><div class="wm-val">${wth.rh||0}%</div></div>
+      <div class="wm-cell"><div class="wm-label">Wind</div><div class="wm-val">${Math.round(wth.wind||0)} mph</div></div>
+      <div class="wm-cell"><div class="wm-label">FFWI</div><div class="wm-val">${f.ffwi_raw||'?'}</div></div>
+    </div>` : '';
+
+  document.getElementById('scoreWrap').innerHTML = `
+    <div class="score-card">
+      <div class="score-top">
+        <div class="score-num" style="color:${col}">${s.toFixed(1)}</div>
+        <div class="score-label" style="color:${col}">${lbl}</div>
+      </div>
+      <div class="score-addr">${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}</div>
+      <div class="gauge-track"><div class="gauge-cursor" style="left:${pct}%"></div></div>
+      <div class="gauge-ticks"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span></div>
+      <div class="factors">${barsHtml}</div>
+      <div style="font-family:var(--mono);font-size:8px;color:var(--muted);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);display:flex;justify-content:space-between;">
+        <span>Raw: ${(Object.keys(SCORE_WEIGHTS).reduce((s,k)=>s+(f[k]||0)*SCORE_WEIGHTS[k].w,0)).toFixed(2)}</span>
+        <span>Clamped: ${s}</span>
+      </div>
+      ${weatherHtml}
+      ${f.fhsz_label ? `<div style="font-family:var(--mono);font-size:8px;color:var(--muted);margin-top:8px;">FHSZ: ${f.fhsz_label}${f.fhsz_floor>1?` <span style="color:#7c4dff">· soft floor ${f.fhsz_floor}</span>`:''}</div>` : ''}
+      ${f.cpuc_tier  ? `<div style="font-family:var(--mono);font-size:8px;color:var(--muted);">CPUC: ${f.cpuc_tier}</div>` : ''}
+      ${f.history_count != null ? `<div style="font-family:var(--mono);font-size:12px;margin-top:6px;padding:7px 10px;background:var(--panel2);border-radius:3px;border:1px solid var(--border);display:flex;align-items:center;gap:9px;"><span style="font-size:18px;line-height:1;">${f.history_count>0?'🔥':''}</span><span style="color:var(--muted2);"><strong style="color:${f.history_count>0?'#ff9800':'var(--muted2)'};font-size:16px;">${f.history_count}</strong> ${f.history_count===1?'fire':'fires'} at this point since 1950</span></div>` : ''}
+      ${f.drought_mm  != null ? `<div style="font-family:var(--mono);font-size:8px;color:var(--muted);">90-day precip: ${f.drought_mm}mm · deficit: ${f.drought_deficit}mm</div>` : ''}
+      ${f.elevation   != null ? `<div style="font-family:var(--mono);font-size:8px;color:var(--muted);">Elevation: ${f.elevation}m · slope: ~${f.slope_pct}%</div>` : ''}
+    </div>`;
+}
+
+function renderPopup(f, latlng) {
+  const s=f.score, col=scoreColor(s), lbl=scoreLabel(s);
+  L.popup().setLatLng(latlng).setContent(`
+    <div style="padding:12px 14px;min-width:210px;">
+      <div style="font-family:'Fira Code',monospace;font-size:9px;color:#636b85;letter-spacing:1.5px;margin-bottom:4px;">HAZARD SCORE</div>
+      <div style="font-family:'Syne',sans-serif;font-size:36px;font-weight:800;color:${col};line-height:1;">${s.toFixed(1)}</div>
+      <div style="font-size:12px;font-weight:600;color:${col};margin-bottom:8px;">${lbl}</div>
+      <div style="font-family:'Fira Code',monospace;font-size:9px;color:#636b85;line-height:1.8;">
+        FHSZ ${(f.fhsz||0).toFixed(1)} · History ${(f.history||0).toFixed(1)}<br>
+        FFWI ${(f.ffwi||0).toFixed(1)} · Slope ${(f.slope||0).toFixed(1)}<br>
+        CPUC ${(f.cpuc||0).toFixed(1)} · Drought ${(f.drought||0).toFixed(1)}<br>
+        ${f.fhsz_label ? 'Zone: '+f.fhsz_label : ''}
+      </div>
+    </div>
+  `).openOn(map);
+}
+
+// ══════════════════════════════════════════════════════
+//  FACTOR CARDS (right panel)
+// ══════════════════════════════════════════════════════
+function buildFactorCards() {
+  document.getElementById('factorCards').innerHTML = Object.entries(SCORE_WEIGHTS).map(([k,cfg]) => {
+    const d = FACTOR_DESCS[k];
+    return `
+      <div class="factor-card" id="fc-${k}">
+        <div class="fc-head">
+          <div class="fc-dot" style="background:${cfg.color}"></div>
+          <div class="fc-name">${cfg.label}</div>
+          <div class="fc-weight">${(cfg.w*100).toFixed(0)}%</div>
+        </div>
+        <div class="fc-desc">${d.desc}</div>
+        <div class="fc-source">Source: <a href="${d.url}" target="_blank">${d.src}</a> · Score: <span id="fcval-${k}">—</span>/10</div>
+      </div>`;
+  }).join('');
+}
+
+function updateFactorCards(f) {
+  Object.keys(SCORE_WEIGHTS).forEach(k => {
+    const el = document.getElementById(`fcval-${k}`);
+    if (el) el.textContent = (f[k]||0).toFixed(1);
+  });
+}
+
+// ══════════════════════════════════════════════════════
+//  METHODOLOGY PAGE
+// ══════════════════════════════════════════════════════
+function buildMethodCards() {
+  document.getElementById('methodCards').innerHTML = Object.entries(SCORE_WEIGHTS).map(([k,cfg]) => {
+    const d = FACTOR_DESCS[k];
+    return `
+      <div class="wg-card">
+        <div class="wg-card-top">
+          <div class="wg-dot" style="background:${cfg.color}"></div>
+          <div class="wg-name">${cfg.label}</div>
+          <div class="wg-pct">${(cfg.w*100).toFixed(0)}%</div>
+        </div>
+        <div class="wg-desc">${d.desc}</div>
+        <div class="wg-api">API: <a href="${d.url}" target="_blank">${d.src}</a></div>
+      </div>`;
+  }).join('');
+}
+
+function buildInterpTable() {
+  document.getElementById('interpTable').innerHTML = SCORE_CLASSES.map(c => `
+    <tr>
+      <td style="color:${scoreColor((c.min+c.max)/2)};font-weight:600;">${c.min}${c.max>c.min?'–'+c.max:''}</td>
+      <td style="color:${scoreColor((c.min+c.max)/2)};">${c.label}</td>
+      <td>${c.desc}</td>
+    </tr>`).join('');
+}
+
+// ══════════════════════════════════════════════════════
+//  LAYER TOGGLES
+// ══════════════════════════════════════════════════════
+function buildLayerToggles() {
+  document.getElementById('layerToggles').innerHTML = Object.entries(layerState).map(([k,v]) => `
+    <div class="layer-row ${v.on?'on':''}" id="lrow-${k}" onclick="toggleLayer('${k}')">
+      <div class="toggle ${v.on?'on':''}" id="ltog-${k}"></div>
+      <div class="layer-dot ${k==='cpuc'?'circle':''}" style="background:${v.color}"></div>
+      <div class="layer-name">${v.label}</div>
+      <div class="layer-src">${v.src}</div>
+    </div>`).join('');
+}
+
+function toggleLayer(k) {
+  const st = layerState[k];
+  st.on = !st.on;
+  document.getElementById(`ltog-${k}`).classList.toggle('on', st.on);
+  document.getElementById(`lrow-${k}`).classList.toggle('on', st.on);
+
+  if (st.on) {
+    if (st.type === 'export') addExportLayer(k);
+    else if (k === 'cpuc')   loadCPUCGeoJSON();
+  } else {
+    if (st.type === 'export') removeExportLayer(k);
+    if (k === 'cpuc' && cpucLayer) { map.removeLayer(cpucLayer); cpucLayer = null; }
+  }
+}
+
+// CPUC — viewport GeoJSON on demand (no public MapServer)
+async function loadCPUCGeoJSON() {
+  if (cpucLayer) { map.removeLayer(cpucLayer); cpucLayer = null; }
+  const b    = map.getBounds();
+  const pad  = 0.1;
+  const geom = `${b.getWest()-pad},${b.getSouth()-pad},${b.getEast()+pad},${b.getNorth()+pad}`;
+  const qp   = new URLSearchParams({
+    where:'1=1', geometry:geom, geometryType:'esriGeometryEnvelope',
+    spatialRel:'esriSpatialRelIntersects', inSR:'4326',
+    outFields:'*', returnGeometry:'true', f:'geojson', resultRecordCount:1000
+  });
+  try {
+    const [r2, r3] = await Promise.all([
+      fetch(CPUC_FS_T2 + '/query?' + qp).then(r => r.json()),
+      fetch(CPUC_FS_T3 + '/query?' + qp).then(r => r.json()),
+    ]);
+    const features = [
+      ...(r2.features||[]).map(f => ({...f, properties:{...f.properties,_tier:2}})),
+      ...(r3.features||[]).map(f => ({...f, properties:{...f.properties,_tier:3}})),
+    ];
+    if (!features.length) return;
+    cpucLayer = L.geoJSON({type:'FeatureCollection', features}, {
+      style: f => {
+        const col = f.properties._tier === 3 ? '#f44336' : '#ff9800';
+        return { fillColor:col, fillOpacity:0.25, color:col, weight:1, opacity:0.8 };
+      },
+      onEachFeature: (f,l) => {
+        const t = f.properties._tier;
+        l.bindTooltip(`CPUC HFTD Tier ${t} — ${t===3?'Extreme':'Elevated'}`, {sticky:true});
+      }
+    }).addTo(map);
+  } catch(e) { console.warn('CPUC GeoJSON load failed:', e.message); }
+}
+
+// ══════════════════════════════════════════════════════
+//  TAB SWITCHING
+// ══════════════════════════════════════════════════════
+function switchTab(name, el) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.htab').forEach(t => t.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  el.classList.add('active');
+  if (name === 'map') setTimeout(() => map.invalidateSize(), 50);
+}
+
+// ══════════════════════════════════════════════════════
+//  LOADING UI
+// ══════════════════════════════════════════════════════
+function setLoad(msg, pct) {
+  document.getElementById('loadMsg').textContent = msg;
+  document.getElementById('loadFill').style.width = pct + '%';
+}
+function hideLoad() { document.getElementById('mapLoad').classList.add('hidden'); }
+
+// ══════════════════════════════════════════════════════
+//  LOCAL FILE WARNING
+// ══════════════════════════════════════════════════════
+(function checkOrigin() {
+  if (location.protocol !== 'file:') return;
+  const banner = document.createElement('div');
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#b71c1c;color:#fff;font-family:monospace;font-size:12px;padding:10px 16px;line-height:1.6;display:flex;align-items:center;justify-content:space-between;gap:16px;';
+  banner.innerHTML = `<span>⚠ <strong>Opened as a local file</strong> — serve locally: <code style="background:rgba(0,0,0,.3);padding:1px 5px;border-radius:2px">python -m http.server 8000</code> then open <code style="background:rgba(0,0,0,.3);padding:1px 5px;border-radius:2px">http://localhost:8000/ca_wildfire_hazard_predictor.html</code></span><button onclick="this.parentElement.remove()" style="background:rgba(0,0,0,.3);border:none;color:#fff;font-size:16px;cursor:pointer;padding:2px 8px;border-radius:3px;">✕</button>`;
+  document.body.prepend(banner);
+})();
+
+window.addEventListener('load', initMap);
+</script>
+</body>
+</html>
